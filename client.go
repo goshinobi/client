@@ -1,26 +1,38 @@
 package client
 
 import (
+	"errors"
 	"net/http"
 	"time"
+
+	"github.com/goshinobi/client/ipchecker"
 )
 
 type client struct {
 	c          *http.Client
-	lifespan   int
-	usedNum    int
+	conf       *Config
 	ip         string
-	useragent  string
 	errorcount int
 }
 
 func (c *client) do(req *http.Request) (resp *http.Response, err error) {
-	c.lifespan++
+	if c.conf != nil {
+		c.conf.lifespan++
+	}
 	return c.c.Do(req)
 }
 
 func (c *client) isDie() bool {
-	return (c.errorcount > 5) || ((c.usedNum > c.lifespan) && (c.usedNum >= 0))
+	if c.conf == nil {
+		return false
+	}
+	return (c.errorcount > 5) || ((c.conf.usedNum > c.conf.lifespan) && (c.conf.usedNum >= 0))
+}
+
+type Config struct {
+	lifespan  int
+	usedNum   int
+	useragent string
 }
 
 type Client struct {
@@ -35,6 +47,9 @@ func (c *Client) deleteClient(n int) {
 }
 
 func (c *Client) Do(req *http.Request) (resp *http.Response, err error) {
+	if len(c.clients) == 0 {
+		return nil, errors.New("no set clients")
+	}
 	resp, err = c.clients[c.cn].do(req)
 	if err != nil {
 		c.clients[c.cn].errorcount++
@@ -48,13 +63,37 @@ func (c *Client) Do(req *http.Request) (resp *http.Response, err error) {
 	return resp, err
 }
 
-func (c *Client) Add(h *http.Client, lifespan int) {
+func (c *Client) Get(url string) (resp *http.Response, err error) {
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	return c.Do(req)
+}
+
+func (c *Client) Add(h *http.Client, conf *Config) {
+	var ip string
+	if c.checkOwnIP {
+		ip = ipchecker.Check(h)
+	}
 	c.clients = append(c.clients, &client{
-		c:        h,
-		lifespan: lifespan,
+		c:    h,
+		conf: conf,
+		ip:   ip,
 	})
 }
 
-func New() *Client {
-	return &Client{}
+func (c *Client) GetIPs() []string {
+	var result []string
+	if !c.checkOwnIP {
+		return nil
+	}
+	for _, client := range c.clients {
+		result = append(result, client.ip)
+	}
+	return result
+}
+
+func New(checkOwnIP bool) *Client {
+	return &Client{checkOwnIP: checkOwnIP}
 }

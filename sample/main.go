@@ -6,7 +6,7 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/goshinobi/client"
-	"github.com/goshinobi/client/ipchecker"
+	"github.com/goshinobi/ipchecker"
 )
 
 func init() {

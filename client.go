@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/goshinobi/client/ipchecker"
+	"github.com/goshinobi/ipchecker"
 )
 
 type client struct {

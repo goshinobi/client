@@ -35,6 +35,14 @@ type Config struct {
 	useragent string
 }
 
+func ConfNew() *Config {
+	return &Config{
+		-1,
+		0,
+		"",
+	}
+}
+
 type Client struct {
 	clients         []*client
 	maxResponseTime time.Time
@@ -59,6 +67,9 @@ func (c *Client) Do(req *http.Request) (resp *http.Response, err error) {
 			c.deleteClient(c.cn)
 		}
 		c.cn++
+		if c.cn >= len(c.clients) {
+			c.cn = 0
+		}
 	}()
 	return resp, err
 }

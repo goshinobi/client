@@ -39,10 +39,6 @@ func myIPChecker(c *http.Client) string {
 }
 
 func main() {
-	c := client.New(true)
-	fmt.Println(c)
-	c.Add(&http.Client{}, nil)
-	fmt.Println(c)
-	fmt.Println(c.GetIPs())
-	fmt.Println(c.Get("http://google.co.jp"))
+	c := client.NewClient()
+	fmt.Print(c)
 }

@@ -1,7 +1,6 @@
 package client
 
 import (
-	"container/ring"
 	"net/http"
 	"net/url"
 )
@@ -19,39 +18,33 @@ type client struct {
 	ip  string
 }
 
-type Client ring.Ring
+type Client struct {
+	p    int
+	list []*client
+}
+
+func newClient(cfg ClientCfg) (*client, error) {
+	if cfg.proxyURL == "" {
+		return &client{
+			&cfg,
+			new(http.Client),
+			"",
+		}, nil
+	}
+	proxyURL, err := url.Parse(cfg.proxyURL)
+	if err != nil {
+		return nil, err
+	}
+	return &client{
+		&cfg,
+		&http.Client{
+			Transport: &http.Transport{
+				Proxy: http.ProxyURL(proxyURL),
+			},
+		},
+		"",
+	}, nil
+}
 
 func NewClient(cfgs ...ClientCfg) *Client {
-	if len(cfgs) == 0 {
-		return &Client{}
-	}
-	r := ring.New(len(cfgs))
-	for _, cfg := range cfgs {
-		if cfg.proxyURL == "" {
-			r.Value = &client{
-				&cfg,
-				new(http.Client),
-				"",
-			}
-		} else {
-			proxyURL, err := url.Parse(cfg.proxyURL)
-			if err != nil {
-				continue
-			}
-			r.Value = &client{
-				&cfg,
-				&http.Client{
-					Transport: &http.Transport{
-						Proxy: http.ProxyURL(proxyURL),
-					},
-				},
-				"",
-			}
-		}
-		r = r.Next()
-
-	}
-
-	ret := Client(*r)
-	return &ret
 }

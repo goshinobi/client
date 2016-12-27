@@ -39,6 +39,8 @@ func myIPChecker(c *http.Client) string {
 }
 
 func main() {
-	c := client.NewClient()
-	fmt.Print(c)
+	c := client.NewClient(client.ClientCfg{})
+
+	fmt.Println("test")
+	fmt.Print(c.Len())
 }

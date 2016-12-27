@@ -1,110 +1,133 @@
 package client
 
 import (
-	"errors"
+	"fmt"
 	"net/http"
-	"time"
+	"net/url"
 
-	"github.com/goshinobi/ipchecker"
+	"h12.me/socks"
+
+	tor "github.com/goshinobi/tor_multi"
 )
 
+type ClientCfg struct {
+	ProxyType string
+	UserAgent string
+	UseNUM    int
+	MaxTTL    int
+	ProxyURL  string
+}
+
 type client struct {
-	c          *http.Client
-	conf       *Config
-	ip         string
-	errorcount int
-}
-
-func (c *client) do(req *http.Request) (resp *http.Response, err error) {
-	if c.conf != nil {
-		c.conf.lifespan++
-	}
-	return c.c.Do(req)
-}
-
-func (c *client) isDie() bool {
-	if c.conf == nil {
-		return false
-	}
-	return (c.errorcount > 5) || ((c.conf.usedNum > c.conf.lifespan) && (c.conf.usedNum >= 0))
-}
-
-type Config struct {
-	lifespan  int
-	usedNum   int
-	useragent string
-}
-
-func ConfNew() *Config {
-	return &Config{
-		-1,
-		0,
-		"",
-	}
+	cfg *ClientCfg
+	c   *http.Client
+	ip  string
 }
 
 type Client struct {
-	clients         []*client
-	maxResponseTime time.Time
-	checkOwnIP      bool
-	cn              int
+	p    int
+	list []*client
 }
 
-func (c *Client) deleteClient(n int) {
-	c.clients = append(c.clients[:n], c.clients[n+1:]...)
-}
-
-func (c *Client) Do(req *http.Request) (resp *http.Response, err error) {
-	if len(c.clients) == 0 {
-		return nil, errors.New("no set clients")
+func newClient(cfg ClientCfg) (*client, error) {
+	if cfg.ProxyURL == "" {
+		return &client{
+			&cfg,
+			new(http.Client),
+			"",
+		}, nil
 	}
-	resp, err = c.clients[c.cn].do(req)
-	if err != nil {
-		c.clients[c.cn].errorcount++
-	}
-	defer func() {
-		if c.clients[c.cn].isDie() {
-			c.deleteClient(c.cn)
-		}
-		c.cn++
-		if c.cn >= len(c.clients) {
-			c.cn = 0
-		}
-	}()
-	return resp, err
-}
-
-func (c *Client) Get(url string) (resp *http.Response, err error) {
-	req, err := http.NewRequest("GET", url, nil)
+	proxyURL, err := url.Parse(cfg.ProxyURL)
 	if err != nil {
 		return nil, err
 	}
-	return c.Do(req)
+	return &client{
+		&cfg,
+		&http.Client{
+			Transport: &http.Transport{
+				Proxy: http.ProxyURL(proxyURL),
+			},
+		},
+		"",
+	}, nil
 }
 
-func (c *Client) Add(h *http.Client, conf *Config) {
-	var ip string
-	if c.checkOwnIP {
-		ip = ipchecker.Check(h)
-	}
-	c.clients = append(c.clients, &client{
-		c:    h,
-		conf: conf,
-		ip:   ip,
-	})
+func newTorClient(info *tor.ProxyInfo) (*client, error) {
+	dialSocksProxy := socks.DialSocksProxy(socks.SOCKS5, fmt.Sprintf("127.0.0.1:%v", info.Conf.SocksPort))
+	tr := &http.Transport{Dial: dialSocksProxy}
+	httpClient := &http.Client{Transport: tr}
+
+	return &client{
+		&ClientCfg{ProxyType: "tor"},
+		httpClient,
+		"",
+	}, nil
 }
 
-func (c *Client) GetIPs() []string {
-	var result []string
-	if !c.checkOwnIP {
-		return nil
+func NewClient(cfgs ...ClientCfg) *Client {
+	ret := Client{
+		0,
+		make([]*client, 0, len(cfgs)),
 	}
-	for _, client := range c.clients {
-		result = append(result, client.ip)
+	for _, cfg := range cfgs {
+		c, err := newClient(cfg)
+		if err != nil {
+			continue
+		}
+		ret.list = append(ret.list, c)
 	}
-	return result
+	return &ret
 }
 
-func New(checkOwnIP bool) *Client {
-	return &Client{checkOwnIP: checkOwnIP}
+func NewClientTor(n int) *Client {
+	ret := Client{
+		0,
+		make([]*client, 0, n),
+	}
+	for i := 0; i < n; i++ {
+		err := tor.StartProxy()
+		if err != nil {
+			continue
+		}
+	}
+	proxyList := tor.GetWorkProxyList()
+	for _, v := range proxyList {
+		torClient, err := newTorClient(v)
+		if err != nil {
+			continue
+		}
+		ret.list = append(ret.list, torClient)
+	}
+
+	return &ret
+}
+
+func (c *Client) Len() int {
+	return len(c.list)
+}
+
+func (c *Client) next() {
+	c.p++
+	if c.Len() <= c.p {
+		c.p = 0
+	}
+}
+
+func (cBuffer *Client) Do(req *http.Request) (*http.Response, error) {
+	defer func() {
+		cBuffer.next()
+	}()
+
+	return cBuffer.list[cBuffer.p].c.Do(req)
+}
+
+func (cBuffer *Client) Get(u string) (*http.Response, error) {
+	defer func() {
+		cBuffer.next()
+	}()
+	return cBuffer.list[cBuffer.p].c.Get(u)
+}
+
+func (cBuffer *Client) Add(newClients *Client) {
+	cBuffer.list = append(cBuffer.list, newClients.list...)
 }

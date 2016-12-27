@@ -39,8 +39,10 @@ func myIPChecker(c *http.Client) string {
 }
 
 func main() {
-	c := client.NewClient(client.ClientCfg{})
+	c := client.NewClient(client.ClientCfg{}, client.ClientCfg{}, client.ClientCfg{})
+	fmt.Println(c.Len())
+	torClient := client.NewClientTor(10)
+	c.Add(torClient)
 
-	fmt.Println("test")
-	fmt.Print(c.Len())
+	fmt.Println(c.Len())
 }
